@@ -1,45 +1,40 @@
-from DataAdd import DataAdd
-from Modeling import Modeling
+from Collaborative_Processing import DataAdd
+from Collaborative_evaluate import main_evaluate  # evaluate.py의 평가 함수 import
 
 def main():
     # 경로 설정
     input_data_path = 'data/train_data(v0.1).csv'
     updated_data_path = 'data/train_updated_data_visitors_and_ratings.csv'
-    test_data_path = 'data/test_data(v0.1).csv'  # 테스트 데이터 경로 추가
+    test_data_path = 'data/test_data(v0.1).csv'
     updated_test_data_path = 'data/test_updated_data_visitors_and_ratings.csv'
     
-    print("Collaborative Filtering")
-    print("=======================.\n")
+    print("1. Collaborative Filtering")
 
-    # 1. 데이터 추가 및 저장 작업 수행
-    print("Starting train data processing...")
-    data_add = DataAdd(input_data_path, updated_data_path)
-    data_add.process_data()
-    print("Data processing completed.")
-    print("=======================.\n")
+    # 1. 학습 데이터 추가 및 저장 작업 수행
+    print("Train data processing...")
+    data_add_train = DataAdd(input_data_path, updated_data_path)
+    data_add_train.process_data()
+    print("Train data processing completed.")
+    print("=======================")
     
-    # 2. 모델 평가 작업 수행 (학습 데이터)
-    print("Starting modeling on training data...")
-    modeling_train = Modeling(updated_data_path)
-    mean_precision_score_train = modeling_train.evaluate_model(k=5)
-    print("Training data evaluation completed.")
-    print(f"Mean Precision@5 score on training data: {mean_precision_score_train}")
-    print("=======================.\n")
-    
-    # 3. 데이터 추가 및 저장 작업 수행
-    print("Starting test data processing...")
-    data_add = DataAdd(test_data_path, updated_test_data_path)
-    data_add.process_data()
-    print("Data processing completed.")
-    print("=======================.\n")
+    # 2. 학습 데이터 평가 작업 수행
+    print("evaluation of train data...")
+    main_evaluate(updated_data_path, k=5)  # 학습 데이터 평가 수행
+    print("evaluation completed.")
+    print("=======================")
 
-    # 4. 모델 평가 작업 수행 (테스트 데이터)
-    print("Starting modeling on test data...")
-    modeling_test = Modeling(updated_test_data_path)
-    mean_precision_score_test = modeling_test.evaluate_model(k=5)
-    print("Test data evaluation completed.")
-    print(f"Mean Precision@5 score on test data: {mean_precision_score_test}")
-    print("=======================.\n")
+    # 3. 테스트 데이터 추가 및 저장 작업 수행
+    print("Test data processing...")
+    data_add_test = DataAdd(test_data_path, updated_test_data_path)
+    data_add_test.process_data()
+    print("Test data processing completed.")
+    print("=======================")
+
+    # 4. 테스트 데이터 평가 작업 수행
+    print("evaluation on test data...")
+    main_evaluate(updated_test_data_path, k=5)  # 테스트 데이터 평가 수행
+    print("evaluation completed.")
+    print("=======================")
 
 if __name__ == "__main__":
     main()
