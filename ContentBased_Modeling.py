@@ -1,66 +1,51 @@
 import pandas as pd
-from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.preprocessing import StandardScaler
 import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import OneHotEncoder
 from ast import literal_eval
 
 class ListingRecommender:
-    def __init__(self, data_path):
-        """
-        data_path: 데이터 파일의 경로
-        """
-        self.df = pd.read_csv(data_path)
-        self.similarity_df = None
-
-    def calculate_user_score(self):
-        """
-        'visitors'와 'user_ratings'를 바탕으로 각 숙소에 대한 유저 점수를 계산하여 'user_score' 열을 추가합니다.
-        """
-        self.df['user_score'] = self.df['user_ratings'].apply(lambda x: np.mean(literal_eval(x)))
-
-    def preprocess_features(self):
-        """
-        추천 시스템에 사용할 Feature들을 선택하고 전처리하여 feature_df를 생성합니다.
-        범주형 변수는 원-핫 인코딩, 수치형 변수는 표준화를 수행합니다.
-        """
-        features_df = self.df[['property_type', 'room_type', 'accommodates', 'bedrooms', 'price']].copy()
-
-        # 'price' 열에서 '$' 기호를 제거하고 float로 변환합니다
-        features_df['price'] = features_df['price'].replace('[\$,]', '', regex=True).astype(float)
-
-        # 범주형 변수에 대해 원-핫 인코딩 수행
-        features_df = pd.get_dummies(features_df, columns=['property_type', 'room_type'])
-
-        # 수치형 변수에 대해 표준화 수행
-        scaler = StandardScaler()
-        features_df[['accommodates', 'bedrooms', 'price']] = scaler.fit_transform(features_df[['accommodates', 'bedrooms', 'price']])
+    def __init__(self, filepath):
+        # 데이터 로드
+        listing = pd.read_csv(filepath)
+        listing['visitors'] = listing['visitors'].apply(literal_eval)
         
-        return features_df
-
-    def calculate_similarity(self):
-        """
-        전처리된 Feature들을 기반으로 코사인 유사도를 계산하여 similarity_df를 생성합니다.
-        """
-        features_df = self.preprocess_features()
-        similarity_matrix = cosine_similarity(features_df)
+        # 필요한 열만 추출
+        self.df_relevant = listing[['listing_id', 'property_type', 'room_type', 'accommodates', 'bedrooms', 'price', 'city', 'visitors']]
         
-        # similarity_df의 인덱스와 열을 listing_id로 설정
-        if 'listing_id' not in self.df.columns:
-            raise ValueError("The dataset does not contain 'listing_id' column.")
+        # 원-핫 인코딩 처리
+        encoder = OneHotEncoder(sparse_output=False)
+        encoded_features = encoder.fit_transform(self.df_relevant[['property_type', 'room_type']])
+        
+        # 원-핫 인코딩된 특성 데이터프레임에 추가
+        encoded_df = pd.DataFrame(encoded_features, columns=encoder.get_feature_names_out(['property_type', 'room_type']))
+        self.encoded_df = pd.concat([self.df_relevant.reset_index(drop=True), encoded_df], axis=1)
+        self.encoded_df = self.encoded_df.drop(columns=['property_type', 'room_type'])
+        
+        # price 형변환
+        self.encoded_df['price'] = self.encoded_df['price'].replace({'\\$': ''}, regex=True).astype(float)
+        
+        # 필요한 특성만 선택
+        self.features = self.encoded_df.drop(columns=['listing_id', 'city', 'visitors'])
+        self.listing = listing
 
-        self.similarity_df = pd.DataFrame(similarity_matrix, index=self.df['listing_id'], columns=self.df['listing_id'])
-
-    def get_recommendations(self, listing_id, top_n=10):
-        """
-        특정 숙소와 유사한 상위 top_n개의 숙소를 추천합니다.
-        """
-        if self.similarity_df is None:
-            self.calculate_similarity()
-
-        # listing_id가 similarity_df에 존재하는지 확인
-        if listing_id not in self.similarity_df.index:
-            raise ValueError(f"Listing ID {listing_id} not found in similarity dataframe.")
-
-        similar_listings = self.similarity_df[listing_id].sort_values(ascending=False)
-        recommendations = similar_listings.iloc[1:top_n+1].index.tolist()
-        return recommendations
+    def get_recommendations(self, listing_id, topn=10):
+        idx = self.listing[self.listing['listing_id'] == listing_id].index[0]
+        target_city = self.listing.loc[idx, 'city']
+        
+        # 같은 city에 속한 숙소 필터링
+        listings_same_city = self.encoded_df[self.encoded_df['city'] == target_city].reset_index(drop=True)
+        listings_original_same_city = self.df_relevant[self.df_relevant['city'] == target_city].reset_index(drop=True)
+        
+        # 대상 숙소 특징 벡터
+        target_features = self.features.loc[idx].values.reshape(1, -1)
+        city_features = listings_same_city.drop(columns=['listing_id', 'city', 'visitors']).values
+        
+        # 코사인 유사도 계산
+        cosine_sim = cosine_similarity(target_features, city_features).flatten()
+        sim_scores = sorted(list(enumerate(cosine_sim)), key=lambda x: x[1], reverse=True)[1:topn+1]
+        recommended_indices = [i[0] for i in sim_scores]
+        
+        # 추천 숙소 정보 반환
+        recommended_listings = listings_original_same_city.iloc[recommended_indices]
+        return recommended_listings[['listing_id', 'property_type', 'room_type', 'accommodates', 'bedrooms', 'price', 'city']], recommended_listings['listing_id'].tolist()

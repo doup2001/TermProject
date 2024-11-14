@@ -2,76 +2,40 @@ import numpy as np
 import pandas as pd
 from ContentBased_Modeling import ListingRecommender
 
-
 class RecommenderEvaluator:
-    def __init__(self, data_path):
-        self.recommender = ListingRecommender(data_path)
-        self.recommender.calculate_user_score()  # 추천 시스템 초기화 및 계산
-
-    @staticmethod
-    def calculate_precision(recommended, relevant):
-        # Precision: 추천 항목 중 실제로 관련 있는 항목의 비율
-        return len(set(recommended) & set(relevant)) / len(recommended) if len(recommended) > 0 else 0
-
-    @staticmethod
-    def calculate_recall(recommended, relevant):
-        # Recall: 실제 관련 있는 항목 중 추천된 항목의 비율
-        return len(set(recommended) & set(relevant)) / len(relevant) if len(relevant) > 0 else 0
-
-    @staticmethod
-    def calculate_ndcg(recommended, relevant):
-        # NDCG: 추천 항목이 실제 관련 항목과 얼마나 잘 일치하는지 계산
-        dcg = sum([1 / np.log2(i + 2) for i, item in enumerate(recommended) if item in relevant])
-        idcg = sum([1 / np.log2(i + 2) for i in range(len(relevant))])
-        return dcg / idcg if idcg > 0 else 0
-
-    def evaluate(self, listing_id, topn=10):
-        """
-        추천된 항목들과 실제 관련 항목들에 대해 평가 메트릭을 계산합니다.
-        ListingRecommender를 내부적으로 사용하여 추천과 평가를 진행
-        """
-        # 추천된 항목들
-        recommendations = self.recommender.get_recommendations(listing_id, top_n=topn)
+    def __init__(self, listing_recommender):
+        self.listing_recommender = listing_recommender
+        self.listing = listing_recommender.listing
+    
+    def calculate_precision_recall(self, recommended_ids, target_visitor_list, all_visited_listings):
+        relevant_items = set()
+        for visitor in target_visitor_list:
+            relevant_items.update(all_visited_listings.get(visitor, []))
         
-        # 실제 관련 항목들 (이 부분을 사용자 피드백이나 비슷한 숙소들을 기반으로 정의)
-        relevant_items = self.recommender.get_recommendations(listing_id, top_n=topn * 2)[:topn]
+        recommended_set = set(recommended_ids)
+        relevant_and_recommended = relevant_items.intersection(recommended_set)
         
-        # 평가 메트릭 계산
-        precision = self.calculate_precision(recommendations, relevant_items)
-        recall = self.calculate_recall(recommendations, relevant_items)
-        ndcg = self.calculate_ndcg(recommendations, relevant_items)
+        precision = len(relevant_and_recommended) / len(recommended_set) if recommended_set else 0
+        recall = len(relevant_and_recommended) / len(relevant_items) if relevant_items else 0
+        return precision, recall
 
-        # 추천된 항목들과 메트릭들을 함께 반환
-        return {
-            'recommended_items': recommendations,
-            'precision': precision,
-            'recall': recall,
-            'ndcg': ndcg
-        }
-
-
-def main_evaluate(data_path, topn=10):
-    # 데이터 로드
-    data = pd.read_csv(data_path)
-    
-    # listing_id 자동 선택 (여기선 첫 번째 항목을 사용)
-    listing_id = data['listing_id'].iloc[0]  # 첫 번째 listing_id를 자동으로 선택
-    # 또는 무작위로 하나를 선택하려면 다음을 사용
-    # listing_id = data['listing_id'].sample(n=1).iloc[0]
-    
-    # 데이터 경로로부터 평가 인스턴스 생성
-    evaluator = RecommenderEvaluator(data_path)
-    
-    # 모델 평가 수행
-    precision, recall, ndcg = evaluator.evaluate(listing_id, topn=topn)
-    
-    print(f"Evaluation completed.")
-    print(f"Precision@{topn}: {precision}")
-    print(f"Recall@{topn}: {recall}")
-    print(f"NDCG@{topn}: {ndcg}")
-
-
-if __name__ == "__main__":
-    # 평가에 사용할 데이터 경로 설정
-    data_path = 'data/updated_data_visitors_and_ratings.csv'
-    main_evaluate(data_path, topn=10)
+    def get_recommendations_with_eval(self, listing_id, topn=10):
+        recommended_listings, recommended_ids = self.listing_recommender.get_recommendations(listing_id, topn=topn)
+        
+        idx = self.listing[self.listing['listing_id'] == listing_id].index[0]
+        target_visitors = self.listing.loc[idx, 'visitors']
+        
+        visitor_to_listings = {}
+        for _, row in self.listing.iterrows():
+            for visitor in row['visitors']:
+                if visitor not in visitor_to_listings:
+                    visitor_to_listings[visitor] = []
+                visitor_to_listings[visitor].append(row['listing_id'])
+        
+        precision, recall = self.calculate_precision_recall(
+            recommended_ids,
+            target_visitors,
+            visitor_to_listings
+        )
+        
+        return recommended_listings, precision, recall
