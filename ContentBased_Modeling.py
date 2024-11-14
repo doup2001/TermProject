@@ -3,7 +3,6 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import OneHotEncoder
 from ast import literal_eval
-
 class ListingRecommender:
     def __init__(self, filepath):
         # 데이터 로드
@@ -11,7 +10,25 @@ class ListingRecommender:
         listing['visitors'] = listing['visitors'].apply(literal_eval)
         
         # 필요한 열만 추출
-        self.df_relevant = listing[['listing_id', 'property_type', 'room_type', 'accommodates', 'bedrooms', 'price', 'city', 'visitors']]
+        amenities_columns = [
+            "TV", "Internet", "Shampoo", "Suitable for Events", 
+            "Washer / Dryer", "Pool", "Hair Dryer", "Smoke Detector", "Cable TV", 
+            "Laptop Friendly Workspace", "Cat(s)", "Doorman", "Washer", "Heating", 
+            "Breakfast", "Safety Card", "Hot Tub", "Pets live on this property", 
+            "Free Parking on Premises", "Dryer", "Essentials", "Iron", "Wireless Internet", 
+            "Dog(s)", "Pets Allowed", "Buzzer/Wireless Intercom", "Gym", "24-Hour Check-in", 
+            "Fire Extinguisher", "Hangers", "Elevator in Building", "Other pet(s)", 
+            "Lock on Bedroom Door", "Wheelchair Accessible", "Indoor Fireplace", 
+            "Smoking Allowed", "Kitchen", "First Aid Kit", "Air Conditioning", 
+            "Family/Kid Friendly", "Carbon Monoxide Detector"
+        ]
+        
+        # 편의 시설 데이터를 이진화 (True/False를 1/0으로 변환)
+        for col in amenities_columns:
+            listing[col] = listing[col].astype(int)
+
+        self.df_relevant = listing[['listing_id', 'property_type', 'room_type', 'accommodates', 
+                                    'bedrooms', 'price', 'city', 'visitors'] + amenities_columns]
         
         # 원-핫 인코딩 처리
         encoder = OneHotEncoder(sparse_output=False)
@@ -25,27 +42,32 @@ class ListingRecommender:
         # price 형변환
         self.encoded_df['price'] = self.encoded_df['price'].replace({'\\$': ''}, regex=True).astype(float)
         
-        # 필요한 특성만 선택
+        # 필요한 특성만 선택 (편의 시설 포함)
         self.features = self.encoded_df.drop(columns=['listing_id', 'city', 'visitors'])
         self.listing = listing
+        self.feature_matrix = self.features.values  # Feature matrix for cosine similarity calculation
+        
+    def generate_user_profile(self, user_visited_listings):
+        """사용자 프로파일 생성 (사용자의 방문한 숙소를 기반으로)"""
+        visited_features = self.features[self.listing['listing_id'].isin(user_visited_listings)]
+        user_profile = visited_features.mean(axis=0)
+        return user_profile
 
-    def get_recommendations(self, listing_id, topn=10):
-        idx = self.listing[self.listing['listing_id'] == listing_id].index[0]
-        target_city = self.listing.loc[idx, 'city']
+    def get_recommendations_with_user_preference(self, user_visited_listings, topn=10):
+        """사용자 프로파일 기반 추천"""
+        user_profile = self.generate_user_profile(user_visited_listings)
         
-        # 같은 city에 속한 숙소 필터링
-        listings_same_city = self.encoded_df[self.encoded_df['city'] == target_city].reset_index(drop=True)
-        listings_original_same_city = self.df_relevant[self.df_relevant['city'] == target_city].reset_index(drop=True)
+        # Convert user_profile to a numpy array and reshape it
+        user_profile_array = user_profile.to_numpy().reshape(1, -1)
         
-        # 대상 숙소 특징 벡터
-        target_features = self.features.loc[idx].values.reshape(1, -1)
-        city_features = listings_same_city.drop(columns=['listing_id', 'city', 'visitors']).values
+        # Calculate cosine similarity
+        cosine_sim = cosine_similarity(user_profile_array, self.feature_matrix)
         
-        # 코사인 유사도 계산
-        cosine_sim = cosine_similarity(target_features, city_features).flatten()
-        sim_scores = sorted(list(enumerate(cosine_sim)), key=lambda x: x[1], reverse=True)[1:topn+1]
-        recommended_indices = [i[0] for i in sim_scores]
+        # Get the top indices
+        top_indices = cosine_sim[0].argsort()[-topn:][::-1]
         
-        # 추천 숙소 정보 반환
-        recommended_listings = listings_original_same_city.iloc[recommended_indices]
-        return recommended_listings[['listing_id', 'property_type', 'room_type', 'accommodates', 'bedrooms', 'price', 'city']], recommended_listings['listing_id'].tolist()
+        # Retrieve recommended listings
+        recommended_listings = self.listing.iloc[top_indices]
+        recommended_ids = recommended_listings['listing_id'].tolist()
+        
+        return recommended_listings, recommended_ids

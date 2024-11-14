@@ -9,6 +9,7 @@ def main():
     updated_data_path = 'data/train_updated_data_visitors_and_ratings.csv'
     test_data_path = 'data/test_data(v0.1).csv'
     updated_test_data_path = 'data/test_updated_data_visitors_and_ratings.csv'
+    listing = 'data/listing_with_visitors.csv'
 
     print("Train data processing...")
     data_add_train = DataAdd(input_data_path, updated_data_path)
@@ -41,42 +42,18 @@ def main():
     print("=======================")
 
     print("\n2. Content-Based Filtering")
-    
-    # Train data evaluation
-    print("Evaluation of train data...")
-    recommender_train = ListingRecommender(updated_data_path)
-    evaluator_train = RecommenderEvaluator(recommender_train)
 
-    # 추천 및 평가 메트릭 계산
-    listing_id = 35001175  # 예시 listing_id
-    recommended_listings, precision, recall = evaluator_train.get_recommendations_with_eval(listing_id, topn=3)
+        # ListingRecommender 객체를 생성 (파일 경로를 실제로 지정)
+    recommender_train = ListingRecommender(listing)
 
-        # 추천된 항목 및 메트릭 출력
-    print("\nRecommended Listings:")
-    print(recommended_listings)
-    print(f"\nPrecision: {precision:.3f}")
-    print(f"Recall: {recall:.3f}")
-    
-    print("Evaluation completed.")
-    print("=======================")
+    # RecommenderEvaluator 객체를 생성
+    evaluator = RecommenderEvaluator(recommender_train)
 
-    # Test data evaluation
-    print("Evaluation of test data...")
-    recommender_test = ListingRecommender(updated_test_data_path)
-    evaluator_test = RecommenderEvaluator(recommender_test)
-    
-    # 추천 및 평가 메트릭 계산
-    listing_id = 7699495  # 예시 listing_id
-    recommended_listings, precision, recall = evaluator_test.get_recommendations_with_eval(listing_id, topn=3)
+    # 유저 ID를 입력받아서 해당 유저의 추천 목록을 계산
+    user_id = 5127407  # 실제 유저 ID 입력
+    recommended_listings, precision_at_k_score = evaluator.get_recommendations_with_eval(user_id, topn=11)
 
-    # 추천된 항목 및 메트릭 출력
-    print("\nRecommended Listings:")
-    print(recommended_listings)
-    print(f"\nPrecision: {precision:.3f}")
-    print(f"Recall: {recall:.3f}")
-    
-    print("Evaluation completed.")
-    print("=======================")
+    print(f"\nPrecision@10: {precision_at_k_score:.3f}")
 
 if __name__ == "__main__":
     main()
